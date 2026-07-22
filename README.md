@@ -21,8 +21,8 @@ Run this? [y/N]:
 
 ## Setup
 
-Set your key (recommended — the key baked into the script is a shared fallback
-and should be treated as public):
+Create an API key in the [NVIDIA API catalog](https://build.nvidia.com/z-ai/glm-5.2)
+and set it in `PIZT_API_KEY`. No key is included in this repository.
 
 ```powershell
 $env:PIZT_API_KEY = 'nvapi-...'      # for this session
@@ -50,7 +50,7 @@ pizt <what you want to do>
 | `-Edit`       | Open the command for editing before the run/confirm step.       |
 | `-DryRun`     | Print the command but never run it.                             |
 | `-Yes`        | Skip the confirmation prompt and run immediately.               |
-| `-NoStream`   | Disable the live streaming display; use one blocking request.   |
+| `-NoStream`   | Use one blocking request instead of a streaming request.        |
 
 The generated command is **copied to your clipboard** automatically. At the
 confirm prompt you can also press **`e`** to edit the command inline before
@@ -82,15 +82,35 @@ CMD: <the command>
 WHY: <one-line explanation>
 ```
 
-pizt streams the response (showing the model's thinking live, dimmed), parses
-the two lines, copies the command to the clipboard, and — unless `-DryRun` —
-asks for confirmation (or lets you edit it) before executing it in the chosen
-shell (`Invoke-Expression` for PowerShell, `cmd /c` for cmd).
+pizt uses NVIDIA's OpenAI-compatible chat-completions endpoint. During a
+streaming request it shows a bounded progress indicator, but it does not print
+raw reasoning or response content. The completed response must match the exact
+two-line format; malformed, multiline, oversized, or control-character-bearing
+responses are refused rather than treated as commands.
+
+After validation, pizt copies the command to the clipboard and — unless
+`-DryRun` — asks for confirmation (or lets you edit it) before executing it in
+the chosen shell (`Invoke-Expression` for PowerShell, `cmd /d /c` for cmd).
 
 ## Notes & safety
 
 - **Always read the command before confirming.** The model can be wrong, and
   `-Yes` runs whatever it produces with no review.
+- API, parsing, and execution failures return a non-zero status when
+  `pizt.ps1` is run directly. Declining a command is a successful cancellation.
 - The model is a slow reasoner; a single request can take 60–90 seconds.
 - Commands are generated for **Windows**. Running under `pwsh` on macOS/Linux
   will still target Windows syntax.
+
+## Development
+
+The regression suite uses Pester 5:
+
+```powershell
+Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser
+Invoke-Pester -Path .\tests -Output Detailed
+```
+
+CI runs the same suite on Windows PowerShell 5.1 and PowerShell 7 and performs
+PowerShell static analysis. The release checklist and audit are in
+[`task.md`](task.md) and [`subtask.md`](subtask.md).

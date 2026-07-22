@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Pester (${{ matrix.shell }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell:
+          - powershell
+          - pwsh
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Pester
+        shell: ${{ matrix.shell }}
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
+
+      - name: Run tests
+        shell: ${{ matrix.shell }}
+        run: |
+          $result = Invoke-Pester -Path ./tests -Output Detailed -PassThru
+          if ($result.Result -ne 'Passed') {
+              throw "Pester result: $($result.Result); $($result.FailedCount) test(s) failed."
+          }
+
+      - name: Run static analysis
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $errors = @(Invoke-ScriptAnalyzer -Path ./pizt.ps1 -Severity Error)
+          $compatibilitySettings = @{
+              Rules = @{
+                  PSUseCompatibleSyntax = @{
+                      Enable = $true
+                      TargetVersions = @('5.1')
+                  }
+              }
+          }
+          $compatibilityIssues = @(
+              Invoke-ScriptAnalyzer -Path ./pizt.ps1 `
+                  -IncludeRule PSUseCompatibleSyntax `
+                  -Settings $compatibilitySettings
+          )
+          $issues = @($errors) + @($compatibilityIssues)
+          $issues | Format-Table -AutoSize
+          if ($issues.Count -gt 0) {
+              throw "$($issues.Count) static-analysis issue(s) found."
+          }
