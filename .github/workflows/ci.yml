@@ -40,7 +40,12 @@ jobs:
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
-          $errors = @(Invoke-ScriptAnalyzer -Path ./pizt.ps1 -Severity Error)
+          $scriptPaths = @('./pizt.ps1', './pizt.psm1')
+          $errors = @(
+              $scriptPaths | ForEach-Object {
+                  Invoke-ScriptAnalyzer -Path $_ -Severity Error
+              }
+          )
           $compatibilitySettings = @{
               Rules = @{
                   PSUseCompatibleSyntax = @{
@@ -50,9 +55,11 @@ jobs:
               }
           }
           $compatibilityIssues = @(
-              Invoke-ScriptAnalyzer -Path ./pizt.ps1 `
-                  -IncludeRule PSUseCompatibleSyntax `
-                  -Settings $compatibilitySettings
+              $scriptPaths | ForEach-Object {
+                  Invoke-ScriptAnalyzer -Path $_ `
+                      -IncludeRule PSUseCompatibleSyntax `
+                      -Settings $compatibilitySettings
+              }
           )
           $issues = @($errors) + @($compatibilityIssues)
           $issues | Format-Table -AutoSize

@@ -1,3 +1,5 @@
+#Requires -Version 5.1
+
 <#
 .SYNOPSIS
     pizt - an AI terminal command agent for Windows PowerShell and cmd.
@@ -424,15 +426,37 @@ function Invoke-Pizt {
             # /d disables cmd.exe AutoRun entries that could otherwise alter a
             # generated command before it executes.
             & cmd.exe /d /c $command
-            if ($LASTEXITCODE -ne 0) { $script:PiztLastExitCode = $LASTEXITCODE }
+            if ($LASTEXITCODE -ne 0) {
+                $script:PiztLastExitCode = $LASTEXITCODE
+                Write-PiztColor '31' "pizt: command returned exit status $LASTEXITCODE."
+            }
         }
         else {
             # Invoke-Expression is intentional: generated commands such as
             # Set-Location must run in the caller's session after confirmation.
             $oldErrorActionPreference = $ErrorActionPreference
+            $previousNativeExitCode = $global:LASTEXITCODE
             try {
                 $ErrorActionPreference = 'Stop'
+                # Invoke-Expression itself reports success even when its final
+                # native process fails. Null is used as a sentinel so a native
+                # exit code can be distinguished from a pure PowerShell command.
+                $global:LASTEXITCODE = $null
                 Invoke-Expression $command
+                $nativeExitCode = $global:LASTEXITCODE
+                if ($null -eq $nativeExitCode) {
+                    $global:LASTEXITCODE = $previousNativeExitCode
+                }
+                elseif ($nativeExitCode -ne 0) {
+                    $script:PiztLastExitCode = $nativeExitCode
+                    Write-PiztColor '31' "pizt: command returned exit status $nativeExitCode."
+                }
+            }
+            catch {
+                if ($null -eq $global:LASTEXITCODE) {
+                    $global:LASTEXITCODE = $previousNativeExitCode
+                }
+                throw
             }
             finally {
                 $ErrorActionPreference = $oldErrorActionPreference
@@ -449,7 +473,7 @@ function Invoke-Pizt {
 # Entry point: when this file is executed directly (not dot-sourced), run.
 # When dot-sourced, it just defines Invoke-Pizt / the `pizt` alias.
 # ---------------------------------------------------------------------------
-Set-Alias -Name pizt -Value Invoke-Pizt -Scope Global -ErrorAction SilentlyContinue
+Set-Alias -Name pizt -Value Invoke-Pizt -Scope Script -ErrorAction SilentlyContinue
 
 if ($MyInvocation.InvocationName -ne '.') {
     Invoke-Pizt -Prompt $Prompt -Shell $Shell -Yes:$Yes -Edit:$Edit -DryRun:$DryRun -NoStream:$NoStream

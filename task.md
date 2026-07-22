@@ -41,8 +41,17 @@ not exist in the source.
 
 ## Current status
 
-Implementation is complete and locally verified. All 22 Pester tests pass in
+Implementation is complete and locally verified. All 29 Pester tests pass in
 PowerShell 7, static analysis reports zero errors and zero PowerShell 5.1 syntax
 compatibility findings, direct-script failure status was verified, and the CI
 workflow YAML parses successfully. The actual Windows CI matrix will run after
 these changes are pushed. Detailed work is tracked in `subtask.md`.
+
+## Continuation acceptance criteria
+
+- [x] PowerShell-targeted native commands propagate their final exit status.
+- [x] Pure PowerShell commands preserve the caller's existing `LASTEXITCODE`.
+- [x] A valid v0.2 module manifest supports `Import-Module` on PowerShell 5.1+.
+- [x] Module imports export only `Invoke-Pizt` and the `pizt` alias.
+- [x] Module import performs no API request or other external side effect.
+- [x] Release changes and module usage are documented.

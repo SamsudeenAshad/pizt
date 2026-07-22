@@ -29,14 +29,24 @@ $env:PIZT_API_KEY = 'nvapi-...'      # for this session
 setx PIZT_API_KEY "nvapi-..."        # persist for future sessions
 ```
 
-Load pizt into your session by dot-sourcing it:
+Import the versioned module from the repository:
+
+```powershell
+Import-Module .\pizt.psd1
+```
+
+Alternatively, load the standalone script by dot-sourcing it:
 
 ```powershell
 . .\pizt.ps1
 ```
 
-To have it available in every terminal, add that line to your profile
-(`notepad $PROFILE`).
+To have pizt available in every terminal, add an `Import-Module` line using the
+manifest's full path to your PowerShell profile (`notepad $PROFILE`):
+
+```powershell
+Import-Module 'C:\path\to\pizt\pizt.psd1'
+```
 
 ## Usage
 
@@ -113,4 +123,5 @@ Invoke-Pester -Path .\tests -Output Detailed
 
 CI runs the same suite on Windows PowerShell 5.1 and PowerShell 7 and performs
 PowerShell static analysis. The release checklist and audit are in
-[`task.md`](task.md) and [`subtask.md`](subtask.md).
+[`task.md`](task.md) and [`subtask.md`](subtask.md). Release changes are listed
+in [`CHANGELOG.md`](CHANGELOG.md).

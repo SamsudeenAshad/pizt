@@ -1,11 +1,13 @@
 BeforeAll {
     $scriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'pizt.ps1'
     $script:OriginalApiKey = [Environment]::GetEnvironmentVariable('PIZT_API_KEY')
+    $script:OriginalLastExitCode = $global:LASTEXITCODE
     . $scriptPath
 }
 
 AfterAll {
     [Environment]::SetEnvironmentVariable('PIZT_API_KEY', $script:OriginalApiKey)
+    $global:LASTEXITCODE = $script:OriginalLastExitCode
 }
 
 Describe 'ConvertFrom-PiztResponse' {
@@ -172,6 +174,30 @@ Describe 'Invoke-Pizt execution gates' {
         $script:PiztLastExitCode | Should -Be 1
     }
 
+    It 'propagates the final native exit code from a PowerShell command' {
+        $global:LASTEXITCODE = 0
+        Mock Invoke-PiztModel { return "CMD: native-tool`nWHY: Runs a native tool." }
+        Mock Invoke-Expression { $global:LASTEXITCODE = 7 }
+
+        Invoke-Pizt -Prompt 'run the native tool' -NoStream -Yes
+
+        $script:PiztLastExitCode | Should -Be 7
+        $global:LASTEXITCODE | Should -Be 7
+        Should -Invoke Write-PiztColor -Times 1 -ParameterFilter {
+            $Code -eq '31' -and $Text -like '*exit status 7*'
+        }
+    }
+
+    It 'preserves LASTEXITCODE when a pure PowerShell command succeeds' {
+        $global:LASTEXITCODE = 23
+        Mock Invoke-PiztModel { return "CMD: Get-Date`nWHY: Shows the current time." }
+
+        Invoke-Pizt -Prompt 'show the time' -NoStream -Yes
+
+        $script:PiztLastExitCode | Should -Be 0
+        $global:LASTEXITCODE | Should -Be 23
+    }
+
     It 'does not execute a valid response after cancellation' {
         Mock Invoke-PiztModel { return "CMD: Get-Date`nWHY: Shows the current time." }
         Mock Read-Host { return 'n' }
@@ -202,5 +228,111 @@ Describe 'Invoke-Pizt execution gates' {
         {
             Invoke-Pizt -Prompt 'show the time' -Shell 'bash' -NoStream -DryRun
         } | Should -Throw '*does not belong to the set*'
+    }
+}
+
+Describe 'Native exit-code integration' {
+    It 'captures a real non-zero native process status' {
+        $env:PIZT_API_KEY = 'test-key'
+        $previousNativeExitCode = $global:LASTEXITCODE
+        $isWindowsHost = $PSVersionTable.PSEdition -eq 'Desktop'
+        $isWindowsVariable = Get-Variable IsWindows -ErrorAction SilentlyContinue
+        if ($isWindowsVariable) { $isWindowsHost = [bool]$isWindowsVariable.Value }
+
+        $script:NativeFailureCommand = if ($isWindowsHost) {
+            'cmd.exe /d /c exit 7'
+        }
+        else {
+            '& /bin/sh -c "exit 7"'
+        }
+
+        Mock Invoke-PiztModel {
+            return "CMD: $script:NativeFailureCommand`nWHY: Returns a test failure status."
+        }
+        Mock Write-PiztColor { }
+        Mock Write-Host { }
+        Mock Copy-PiztToClipboard { return $true }
+
+        try {
+            Invoke-Pizt -Prompt 'run the exit-code test' -NoStream -Yes
+
+            $script:PiztLastExitCode | Should -Be 7
+            $global:LASTEXITCODE | Should -Be 7
+        }
+        finally {
+            $global:LASTEXITCODE = $previousNativeExitCode
+        }
+    }
+}
+
+Describe 'Module packaging' {
+    BeforeAll {
+        $script:ManifestPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'pizt.psd1'
+    }
+
+    It 'has a valid v0.2 module manifest' {
+        $manifest = Test-ModuleManifest -Path $script:ManifestPath -ErrorAction Stop
+
+        $manifest.Version.ToString() | Should -BeExactly '0.2.0'
+        $manifest.PowerShellVersion.ToString() | Should -BeExactly '5.1'
+    }
+
+    It 'declares only the supported public commands' {
+        $manifestData = Import-PowerShellDataFile -Path $script:ManifestPath
+
+        @($manifestData.FunctionsToExport) | Should -Be @('Invoke-Pizt')
+        @($manifestData.AliasesToExport) | Should -Be @('pizt')
+        @($manifestData.CmdletsToExport).Count | Should -Be 0
+        @($manifestData.VariablesToExport).Count | Should -Be 0
+    }
+
+    It 'imports without contacting the API and exports the intended surface' {
+        $env:PIZT_API_KEY = ''
+        $module = Import-Module $script:ManifestPath -Force -PassThru -ErrorAction Stop
+        try {
+            @($module.ExportedFunctions.Keys) | Should -Be @('Invoke-Pizt')
+            @($module.ExportedAliases.Keys) | Should -Be @('pizt')
+        }
+        finally {
+            Remove-Module $module -Force
+        }
+    }
+
+    It 'propagates a native exit status through the imported module' {
+        $isWindowsHost = $PSVersionTable.PSEdition -eq 'Desktop'
+        $isWindowsVariable = Get-Variable IsWindows -ErrorAction SilentlyContinue
+        if ($isWindowsVariable) { $isWindowsHost = [bool]$isWindowsVariable.Value }
+        $nativeFailureCommand = if ($isWindowsHost) {
+            'cmd.exe /d /c exit 7'
+        }
+        else {
+            '& /bin/sh -c "exit 7"'
+        }
+
+        $previousNativeExitCode = $global:LASTEXITCODE
+        $module = Import-Module $script:ManifestPath -Force -PassThru -ErrorAction Stop
+        try {
+            InModuleScope pizt -Parameters @{ NativeFailureCommand = $nativeFailureCommand } {
+                param($NativeFailureCommand)
+
+                $env:PIZT_API_KEY = 'test-key'
+                $script:NativeFailureCommand = $NativeFailureCommand
+                Mock Invoke-PiztModel {
+                    return "CMD: $script:NativeFailureCommand`nWHY: Returns a test failure status."
+                }
+                Mock Write-PiztColor { }
+                Mock Write-Host { }
+                Mock Copy-PiztToClipboard { return $true }
+
+                Invoke-Pizt -Prompt 'run the module exit-code test' -NoStream -Yes
+
+                $script:PiztLastExitCode | Should -Be 7
+                $global:LASTEXITCODE | Should -Be 7
+            }
+        }
+        finally {
+            Remove-Module $module -Force
+            $global:LASTEXITCODE = $previousNativeExitCode
+        }
     }
 }

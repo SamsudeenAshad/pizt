@@ -19,6 +19,8 @@
 - [x] Disable `cmd.exe` AutoRun processing with `/d`.
 - [x] Report non-zero status for input, request, parse, and execution failures.
 - [x] Avoid ANSI output where the PowerShell host does not advertise support.
+- [x] Propagate non-zero native exit codes from PowerShell-targeted commands.
+- [x] Preserve the caller's `LASTEXITCODE` after pure PowerShell commands.
 
 ## P1 — verification
 
@@ -37,15 +39,26 @@
 
 ## Verification snapshot
 
-- Pester 5.7.1 on PowerShell 7: 22 passed, 0 failed.
+- Pester 5.7.1 on PowerShell 7: 29 passed, 0 failed.
 - PSScriptAnalyzer: 0 errors.
 - PowerShell 5.1 compatible-syntax analysis: 0 findings.
 - Direct script without required configuration: exit status 2.
 - Redirected output: no ANSI control sequences.
 - Workflow YAML: parsed successfully.
 
-## Deferred beyond v0.2
+## P1 — module and release preparation
 
-- Package/sign the script for PowerShell Gallery distribution.
+- [x] Declare PowerShell 5.1 as the minimum supported engine version.
+- [x] Add a v0.2 module wrapper and valid module manifest.
+- [x] Restrict module exports to `Invoke-Pizt` and the `pizt` alias.
+- [x] Keep standalone execution and dot-sourced usage compatible.
+- [x] Add module validation and side-effect-free import tests.
+- [x] Add a changelog and document module import in the README.
+- [x] Expand CI static analysis to the module wrapper.
+
+## Deferred release operations
+
+- Run the configured Windows CI matrix after pushing the changes.
+- Code-sign and publish v0.2 with a maintainer-owned signing certificate.
 - Add configurable providers/models behind a stable configuration contract.
 - Add an optional policy engine for organization-specific command restrictions.
